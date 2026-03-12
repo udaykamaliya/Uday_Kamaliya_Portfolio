@@ -111,21 +111,20 @@ PORTFOLIO = {
     "available": True,
     "skills": [
         {"category": "Languages", "icon": "🐍", "color": "violet", "skills_list": [
-            {"name": "Python", "level": 85},
-            {"name": "SQL", "level": 70},
+            {"name": "Python", "level": 65},
+            {"name": "SQL", "level": 60},
             {"name": "HTML/CSS", "level": 65},
         ]},
         {"category": "AI / ML", "icon": "🧠", "color": "cyan", "skills_list": [
-            {"name": "Scikit-learn", "level": 80},
-            {"name": "Pandas / NumPy", "level": 82},
-            {"name": "LangChain / RAG", "level": 65},
-            {"name": "Random Forest", "level": 78},
+            {"name": "Scikit-learn", "level": 60},
+            {"name": "Pandas / NumPy", "level": 65},
+            {"name": "LangChain / RAG", "level": 60},
         ]},
         {"category": "Tools", "icon": "🛠️", "color": "pink", "skills_list": [
-            {"name": "Flask", "level": 72},
-            {"name": "Tableau", "level": 75},
-            {"name": "Jupyter / Colab", "level": 88},
-            {"name": "Git / GitHub", "level": 70},
+            {"name": "Flask", "level": 60},
+            {"name": "Tableau", "level": 60},
+            {"name": "Jupyter / Colab", "level": 70},
+            {"name": "Git / GitHub", "level": 75},
         ]},
     ],
     "projects": [
