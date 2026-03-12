@@ -11,7 +11,7 @@ app = Flask(__name__)
 # ── Email Config ────────────────────────────────────────────────
 # Set these as environment variables OR replace directly below
 GMAIL_USER     = os.environ.get("GMAIL_USER",     "udaykamaliya28@gmail.com")
-GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "YOUR_APP_PASSWORD_HERE")
+GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "gasmyqjilqslgmef")
 NOTIFY_EMAIL   = os.environ.get("NOTIFY_EMAIL",   "udaykamaliya28@gmail.com")
 
 
