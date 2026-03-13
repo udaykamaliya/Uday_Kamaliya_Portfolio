@@ -1,103 +1,159 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from datetime import datetime
-import re
-import smtplib
-import os
+import re, smtplib, os, json, traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "uday-portfolio-secret-2025")
 
-# ── Email Config ────────────────────────────────────────────────
-# Set these as environment variables OR replace directly below
-GMAIL_USER     = os.environ.get("GMAIL_USER",     "udaykamaliya28@gmail.com")
+# ── Email Config ─────────────────────────────────────────────────
+GMAIL_USER     = os.environ.get("GMAIL_USER",     "")
 GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
 NOTIFY_EMAIL   = os.environ.get("NOTIFY_EMAIL",   "udaykamaliya28@gmail.com")
 
-def send_email(name, sender_email, subject, message):
-    """Send contact form submission to Uday's Gmail inbox."""
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["From"]    = GMAIL_USER
-        msg["To"]      = NOTIFY_EMAIL
-        msg["Subject"] = f"Portfolio Contact: {subject or 'New Message'}"
+# ── Visitor Counter ──────────────────────────────────────────────
+COUNTER_FILE = os.path.join(os.path.dirname(__file__), "visitor_count.json")
 
-        plain = f"""
-New contact form submission from your portfolio!
+def get_visitor_count():
+    try:
+        if os.path.exists(COUNTER_FILE):
+            with open(COUNTER_FILE, "r") as f:
+                return json.load(f).get("total", 0)
+    except:
+        pass
+    return 0
+
+def increment_visitor():
+    try:
+        count = get_visitor_count() + 1
+        with open(COUNTER_FILE, "w") as f:
+            json.dump({"total": count, "updated": datetime.now().isoformat()}, f)
+        return count
+    except:
+        return get_visitor_count()
+
+
+# ── Email Sender ─────────────────────────────────────────────────
+def send_email(name, sender_email, subject, message):
+    """Try multiple SMTP methods to ensure delivery."""
+
+    # Check credentials exist
+    if not GMAIL_USER or not GMAIL_PASSWORD:
+        print("❌ Email credentials missing — set GMAIL_USER and GMAIL_PASSWORD env vars on Render")
+        return False
+
+    print(f"📧 Attempting email send...")
+    print(f"   GMAIL_USER    : {GMAIL_USER}")
+    print(f"   NOTIFY_EMAIL  : {NOTIFY_EMAIL}")
+    print(f"   Password set  : {'YES' if GMAIL_PASSWORD else 'NO'}")
+    print(f"   Password len  : {len(GMAIL_PASSWORD)} chars")
+
+    # Build email message
+    msg = MIMEMultipart("alternative")
+    msg["From"]    = GMAIL_USER
+    msg["To"]      = NOTIFY_EMAIL
+    msg["Reply-To"]= sender_email
+    msg["Subject"] = f"Portfolio Contact: {subject or 'New Message'}"
+
+    plain = f"""
+New contact form submission!
 
 Name    : {name}
 Email   : {sender_email}
-Subject : {subject}
+Subject : {subject or '(none)'}
 
 Message:
 {message}
 
 Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
-        """.strip()
+    """.strip()
 
-        html = f"""
+    html = f"""
 <!DOCTYPE html>
 <html>
 <head>
   <style>
-    body {{ font-family:'Segoe UI',Arial,sans-serif; background:#0c0e1a; margin:0; padding:0; }}
-    .wrap {{ max-width:580px; margin:40px auto; background:#111426; border-radius:16px; overflow:hidden; border:1px solid rgba(255,255,255,.08); }}
-    .header {{ background:linear-gradient(135deg,#7c5cfc,#22d3ee); padding:32px 36px; }}
-    .header h1 {{ color:#fff; margin:0; font-size:22px; font-weight:700; }}
-    .header p  {{ color:rgba(255,255,255,.8); margin:6px 0 0; font-size:14px; }}
-    .body {{ padding:32px 36px; }}
-    .field {{ margin-bottom:20px; }}
-    .label {{ display:block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#7c5cfc; margin-bottom:6px; }}
-    .val {{ background:#1a1d2e; border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:12px 16px; color:#dde3f0; font-size:14px; line-height:1.6; }}
-    .msg-box {{ background:#1a1d2e; border:1px solid rgba(124,92,252,.3); border-radius:8px; padding:16px; color:#dde3f0; font-size:14px; line-height:1.75; white-space:pre-wrap; }}
-    .footer {{ border-top:1px solid rgba(255,255,255,.06); padding:20px 36px; text-align:center; }}
-    .footer p {{ color:#7a869e; font-size:12px; margin:0; }}
-    .reply-btn {{ display:inline-block; margin-top:16px; background:linear-gradient(135deg,#7c5cfc,#22d3ee); color:#fff !important; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:700; font-size:14px; }}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0c0e1a;margin:0;padding:20px;}}
+    .wrap{{max-width:560px;margin:0 auto;background:#111426;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.1);}}
+    .hdr{{background:linear-gradient(135deg,#7c5cfc,#22d3ee);padding:28px 32px;}}
+    .hdr h1{{color:#fff;margin:0;font-size:20px;font-weight:700;}}
+    .hdr p{{color:rgba(255,255,255,.8);margin:4px 0 0;font-size:13px;}}
+    .bdy{{padding:28px 32px;}}
+    .row{{margin-bottom:18px;}}
+    .lbl{{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7c5cfc;margin-bottom:5px;}}
+    .val{{background:#1a1d2e;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:10px 14px;color:#dde3f0;font-size:14px;}}
+    .msg{{background:#1a1d2e;border:1px solid rgba(124,92,252,.25);border-radius:8px;padding:14px;color:#dde3f0;font-size:14px;line-height:1.7;white-space:pre-wrap;}}
+    .btn{{display:inline-block;margin-top:20px;background:linear-gradient(135deg,#7c5cfc,#22d3ee);color:#fff;text-decoration:none;padding:11px 26px;border-radius:8px;font-weight:700;font-size:14px;}}
+    .ftr{{border-top:1px solid rgba(255,255,255,.06);padding:18px 32px;text-align:center;}}
+    .ftr p{{color:#7a869e;font-size:12px;margin:0;}}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="header">
-      <h1>New Portfolio Message</h1>
+    <div class="hdr">
+      <h1>💼 New Portfolio Message</h1>
       <p>Someone reached out via your portfolio contact form</p>
     </div>
-    <div class="body">
-      <div class="field"><span class="label">From</span><div class="val">{name}</div></div>
-      <div class="field"><span class="label">Email</span><div class="val">{sender_email}</div></div>
-      <div class="field"><span class="label">Subject</span><div class="val">{subject or '(No subject)'}</div></div>
-      <div class="field"><span class="label">Message</span><div class="msg-box">{message}</div></div>
-      <div style="text-align:center;margin-top:24px;">
-        <a href="mailto:{sender_email}?subject=Re: {subject}" class="reply-btn">Reply to {name}</a>
+    <div class="bdy">
+      <div class="row"><div class="lbl">From</div><div class="val">{name}</div></div>
+      <div class="row"><div class="lbl">Email</div><div class="val">{sender_email}</div></div>
+      <div class="row"><div class="lbl">Subject</div><div class="val">{subject or '(No subject)'}</div></div>
+      <div class="row"><div class="lbl">Message</div><div class="msg">{message}</div></div>
+      <div style="text-align:center">
+        <a href="mailto:{sender_email}?subject=Re: {subject}" class="btn">✉️ Reply to {name}</a>
       </div>
     </div>
-    <div class="footer">
+    <div class="ftr">
       <p>Received on {datetime.now().strftime('%d %B %Y at %I:%M %p')}</p>
-      <p style="margin-top:4px;">Sent via <strong style="color:#a78bfa;">uday.dev</strong> portfolio</p>
+      <p style="margin-top:4px">Sent via <strong style="color:#a78bfa">uday.dev</strong> portfolio</p>
     </div>
   </div>
 </body>
 </html>
-        """
+    """
 
-        msg.attach(MIMEText(plain, "plain"))
-        msg.attach(MIMEText(html,  "html"))
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html,  "html"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    # ── Method 1: SMTP_SSL port 465 ──
+    try:
+        print("🔄 Trying SMTP_SSL port 465...")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.send_message(msg)
-
-        print(f"✅ Email sent for message from {name} <{sender_email}>")
+        print("✅ Email sent via port 465!")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ Auth failed (465): {e}")
+        print("   → Check your Gmail App Password is correct")
+    except Exception as e:
+        print(f"⚠️  Port 465 failed: {e}")
 
-    except smtplib.SMTPAuthenticationError:
-        print("❌ Gmail auth failed — check your App Password in app.py or env vars.")
-        return False
-    except Exception as ex:
-        print(f"❌ Email error: {ex}")
-        return False
+    # ── Method 2: STARTTLS port 587 ──
+    try:
+        print("🔄 Trying STARTTLS port 587...")
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(GMAIL_USER, GMAIL_PASSWORD)
+            server.send_message(msg)
+        print("✅ Email sent via port 587!")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ Auth failed (587): {e}")
+        print("   → Your App Password is wrong or expired")
+        print("   → Go to myaccount.google.com → App Passwords → Create new one")
+    except Exception as e:
+        print(f"⚠️  Port 587 failed: {e}")
+        print(f"   Full error: {traceback.format_exc()}")
+
+    print("❌ All email methods failed")
+    return False
 
 
-# ── Portfolio Data ──────────────────────────────────────────────
+# ── Portfolio Data ───────────────────────────────────────────────
 PORTFOLIO = {
     "name": "Uday Kamaliya",
     "title": "AI/ML Developer",
@@ -110,20 +166,21 @@ PORTFOLIO = {
     "available": True,
     "skills": [
         {"category": "Languages", "icon": "🐍", "color": "violet", "skills_list": [
-            {"name": "Python", "level": 65},
-            {"name": "SQL", "level": 60},
+            {"name": "Python", "level": 85},
+            {"name": "SQL", "level": 70},
             {"name": "HTML/CSS", "level": 65},
         ]},
         {"category": "AI / ML", "icon": "🧠", "color": "cyan", "skills_list": [
-            {"name": "Scikit-learn", "level": 60},
-            {"name": "Pandas / NumPy", "level": 65},
-            {"name": "LangChain / RAG", "level": 60},
+            {"name": "Scikit-learn", "level": 80},
+            {"name": "Pandas / NumPy", "level": 82},
+            {"name": "LangChain / RAG", "level": 65},
+            {"name": "Random Forest", "level": 78},
         ]},
         {"category": "Tools", "icon": "🛠️", "color": "pink", "skills_list": [
-            {"name": "Flask", "level": 60},
-            {"name": "Tableau", "level": 60},
-            {"name": "Jupyter / Colab", "level": 70},
-            {"name": "Git / GitHub", "level": 75},
+            {"name": "Flask", "level": 72},
+            {"name": "Tableau", "level": 75},
+            {"name": "Jupyter / Colab", "level": 88},
+            {"name": "Git / GitHub", "level": 70},
         ]},
     ],
     "projects": [
@@ -131,7 +188,7 @@ PORTFOLIO = {
             "id": 1, "num": "01", "icon": "🤖", "color": "violet",
             "title": "SmartPredict ML Pipeline", "subtitle": "RAG-based Chatbot",
             "description": "Built an AI-powered chatbot using Retrieval-Augmented Generation to answer queries from Amazon product data. Combines LLM capabilities with real-time vector search for accurate, context-aware responses.",
-            "tags": [{"label": "Python","color":"v"},{"label":"LangChain","color":"c"},{"label":"RAG","color":"v"},{"label":"OpenAI","color":"p"},{"label":"FAISS","color":"g"}],
+            "tags": [{"label":"Python","color":"v"},{"label":"LangChain","color":"c"},{"label":"RAG","color":"v"},{"label":"OpenAI","color":"p"},{"label":"FAISS","color":"g"}],
             "github": "https://github.com/udaykamaliya", "featured": True,
         },
         {
@@ -157,10 +214,20 @@ PORTFOLIO = {
 }
 
 
-# ── Routes ──────────────────────────────────────────────────────
+# ── Routes ───────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("index.html", data=PORTFOLIO, year=datetime.now().year)
+    if not session.get("visited"):
+        session["visited"] = True
+        count = increment_visitor()
+    else:
+        count = get_visitor_count()
+    return render_template("index.html", data=PORTFOLIO, year=datetime.now().year, visitor_count=count)
+
+
+@app.route("/api/visitors")
+def visitors():
+    return jsonify({"total": get_visitor_count()})
 
 
 @app.route("/api/contact", methods=["POST"])
@@ -176,9 +243,23 @@ def contact():
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
 
-    print(f"\n📬 New message from {name} <{email}>\nSubject: {subject}\n{message}\n")
-    send_email(name, email, subject, message)
-    return jsonify({"ok": True, "message": f"Thanks {name}! I'll get back to you soon! 🚀"})
+    # Always log to terminal so you never miss a message
+    print(f"\n{'='*50}")
+    print(f"📬 NEW CONTACT FORM SUBMISSION")
+    print(f"   Name    : {name}")
+    print(f"   Email   : {email}")
+    print(f"   Subject : {subject}")
+    print(f"   Message : {message}")
+    print(f"   Time    : {datetime.now().strftime('%d %B %Y at %I:%M %p')}")
+    print(f"{'='*50}\n")
+
+    email_sent = send_email(name, email, subject, message)
+
+    if email_sent:
+        return jsonify({"ok": True, "message": f"Thanks {name}! Message received. I'll reply soon! 🚀"})
+    else:
+        # Still show success to user — message is logged in Render logs
+        return jsonify({"ok": True, "message": f"Thanks {name}! Message received. I'll reply soon! 🚀"})
 
 
 @app.route("/api/stats")
@@ -187,11 +268,11 @@ def stats():
         "projects":  len(PORTFOLIO["projects"]),
         "skills":    sum(len(s["skills_list"]) for s in PORTFOLIO["skills"]),
         "available": PORTFOLIO["available"],
+        "visitors":  get_visitor_count(),
         "year":      datetime.now().year,
     })
 
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=False, host="0.0.0.0", port=port)
