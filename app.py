@@ -11,9 +11,8 @@ app = Flask(__name__)
 # ── Email Config ────────────────────────────────────────────────
 # Set these as environment variables OR replace directly below
 GMAIL_USER     = os.environ.get("GMAIL_USER",     "udaykamaliya28@gmail.com")
-GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "yxutidmawierorsh")
+GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
 NOTIFY_EMAIL   = os.environ.get("NOTIFY_EMAIL",   "udaykamaliya28@gmail.com")
-
 
 def send_email(name, sender_email, subject, message):
     """Send contact form submission to Uday's Gmail inbox."""
