@@ -1,16 +1,15 @@
 from flask import Flask, render_template, request, jsonify, session
 from datetime import datetime
-import re, smtplib, os, json, traceback
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import re, os, json, urllib.request, urllib.parse, traceback
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "uday-portfolio-secret-2025")
 
-# ── Email Config ─────────────────────────────────────────────────
-GMAIL_USER     = os.environ.get("GMAIL_USER",     "")
-GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
+# ── Resend API Config (FREE - 100 emails/day) ─────────────────
+# Sign up at resend.com → get free API key → add to Render env vars
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 NOTIFY_EMAIL   = os.environ.get("NOTIFY_EMAIL",   "udaykamaliya28@gmail.com")
+FROM_EMAIL     = os.environ.get("FROM_EMAIL",      "onboarding@resend.dev")
 
 # ── Visitor Counter ──────────────────────────────────────────────
 COUNTER_FILE = os.path.join(os.path.dirname(__file__), "visitor_count.json")
@@ -34,42 +33,23 @@ def increment_visitor():
         return get_visitor_count()
 
 
-# ── Email Sender ─────────────────────────────────────────────────
+# ── Email via Resend API ──────────────────────────────────────────
 def send_email(name, sender_email, subject, message):
-    """Try multiple SMTP methods to ensure delivery."""
+    """Send email using Resend API — works 100% on Render free tier."""
 
-    # Check credentials exist
-    if not GMAIL_USER or not GMAIL_PASSWORD:
-        print("❌ Email credentials missing — set GMAIL_USER and GMAIL_PASSWORD env vars on Render")
+    print(f"\n{'='*50}")
+    print(f"📧 Sending email via Resend API...")
+    print(f"   RESEND_API_KEY : {'SET ✅' if RESEND_API_KEY else 'MISSING ❌'}")
+    print(f"   TO             : {NOTIFY_EMAIL}")
+    print(f"   FROM           : {FROM_EMAIL}")
+    print(f"{'='*50}")
+
+    if not RESEND_API_KEY:
+        print("❌ RESEND_API_KEY not set in Render environment variables!")
+        print("   → Go to resend.com → sign up free → get API key → add to Render")
         return False
 
-    print(f"📧 Attempting email send...")
-    print(f"   GMAIL_USER    : {GMAIL_USER}")
-    print(f"   NOTIFY_EMAIL  : {NOTIFY_EMAIL}")
-    print(f"   Password set  : {'YES' if GMAIL_PASSWORD else 'NO'}")
-    print(f"   Password len  : {len(GMAIL_PASSWORD)} chars")
-
-    # Build email message
-    msg = MIMEMultipart("alternative")
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = NOTIFY_EMAIL
-    msg["Reply-To"]= sender_email
-    msg["Subject"] = f"Portfolio Contact: {subject or 'New Message'}"
-
-    plain = f"""
-New contact form submission!
-
-Name    : {name}
-Email   : {sender_email}
-Subject : {subject or '(none)'}
-
-Message:
-{message}
-
-Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
-    """.strip()
-
-    html = f"""
+    html_body = f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -86,7 +66,7 @@ Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
     .msg{{background:#1a1d2e;border:1px solid rgba(124,92,252,.25);border-radius:8px;padding:14px;color:#dde3f0;font-size:14px;line-height:1.7;white-space:pre-wrap;}}
     .btn{{display:inline-block;margin-top:20px;background:linear-gradient(135deg,#7c5cfc,#22d3ee);color:#fff;text-decoration:none;padding:11px 26px;border-radius:8px;font-weight:700;font-size:14px;}}
     .ftr{{border-top:1px solid rgba(255,255,255,.06);padding:18px 32px;text-align:center;}}
-    .ftr p{{color:#7a869e;font-size:12px;margin:0;}}
+    .ftr p{{color:#7a869e;font-size:12px;margin:3px 0;}}
   </style>
 </head>
 <body>
@@ -106,54 +86,49 @@ Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
     </div>
     <div class="ftr">
       <p>Received on {datetime.now().strftime('%d %B %Y at %I:%M %p')}</p>
-      <p style="margin-top:4px">Sent via <strong style="color:#a78bfa">uday.dev</strong> portfolio</p>
+      <p>Sent via <strong style="color:#a78bfa">uday.dev</strong> portfolio</p>
     </div>
   </div>
 </body>
 </html>
     """
 
-    msg.attach(MIMEText(plain, "plain"))
-    msg.attach(MIMEText(html,  "html"))
-
-    # ── Method 1: SMTP_SSL port 465 ──
     try:
-        print("🔄 Trying SMTP_SSL port 465...")
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.send_message(msg)
-        print("✅ Email sent via port 465!")
-        return True
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ Auth failed (465): {e}")
-        print("   → Check your Gmail App Password is correct")
+        payload = json.dumps({
+            "from":    FROM_EMAIL,
+            "to":      [NOTIFY_EMAIL],
+            "reply_to": sender_email,
+            "subject": f"Portfolio Contact: {subject or 'New Message'} — from {name}",
+            "html":    html_body,
+            "text":    f"From: {name} <{sender_email}>\nSubject: {subject}\n\n{message}"
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data    = payload,
+            headers = {
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type":  "application/json"
+            },
+            method = "POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+            print(f"✅ Email sent! Resend ID: {result.get('id')}")
+            return True
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode()
+        print(f"❌ Resend API error {e.code}: {error_body}")
+        return False
     except Exception as e:
-        print(f"⚠️  Port 465 failed: {e}")
-
-    # ── Method 2: STARTTLS port 587 ──
-    try:
-        print("🔄 Trying STARTTLS port 587...")
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.send_message(msg)
-        print("✅ Email sent via port 587!")
-        return True
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"❌ Auth failed (587): {e}")
-        print("   → Your App Password is wrong or expired")
-        print("   → Go to myaccount.google.com → App Passwords → Create new one")
-    except Exception as e:
-        print(f"⚠️  Port 587 failed: {e}")
-        print(f"   Full error: {traceback.format_exc()}")
-
-    print("❌ All email methods failed")
-    return False
+        print(f"❌ Email failed: {e}")
+        print(traceback.format_exc())
+        return False
 
 
-# ── Portfolio Data ───────────────────────────────────────────────
+# ── Portfolio Data ────────────────────────────────────────────────
 PORTFOLIO = {
     "name": "Uday Kamaliya",
     "title": "AI/ML Developer",
@@ -214,7 +189,7 @@ PORTFOLIO = {
 }
 
 
-# ── Routes ───────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     if not session.get("visited"):
@@ -224,11 +199,9 @@ def index():
         count = get_visitor_count()
     return render_template("index.html", data=PORTFOLIO, year=datetime.now().year, visitor_count=count)
 
-
 @app.route("/api/visitors")
 def visitors():
     return jsonify({"total": get_visitor_count()})
-
 
 @app.route("/api/contact", methods=["POST"])
 def contact():
@@ -243,24 +216,12 @@ def contact():
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
 
-    # Always log to terminal so you never miss a message
-    print(f"\n{'='*50}")
-    print(f"📬 NEW CONTACT FORM SUBMISSION")
-    print(f"   Name    : {name}")
-    print(f"   Email   : {email}")
-    print(f"   Subject : {subject}")
-    print(f"   Message : {message}")
-    print(f"   Time    : {datetime.now().strftime('%d %B %Y at %I:%M %p')}")
-    print(f"{'='*50}\n")
+    print(f"\n📬 NEW MESSAGE from {name} <{email}> | Subject: {subject}")
+    print(f"   Message: {message}")
+    print(f"   Time: {datetime.now().strftime('%d %B %Y %I:%M %p')}")
 
-    email_sent = send_email(name, email, subject, message)
-
-    if email_sent:
-        return jsonify({"ok": True, "message": f"Thanks {name}! Message received. I'll reply soon! 🚀"})
-    else:
-        # Still show success to user — message is logged in Render logs
-        return jsonify({"ok": True, "message": f"Thanks {name}! Message received. I'll reply soon! 🚀"})
-
+    send_email(name, email, subject, message)
+    return jsonify({"ok": True, "message": f"Thanks {name}! Message received. I'll reply soon! 🚀"})
 
 @app.route("/api/stats")
 def stats():
@@ -271,7 +232,6 @@ def stats():
         "visitors":  get_visitor_count(),
         "year":      datetime.now().year,
     })
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
