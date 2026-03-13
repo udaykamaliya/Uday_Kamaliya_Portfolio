@@ -86,6 +86,7 @@ Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
             server.ehlo()
             server.starttls()
             server.login(GMAIL_USER, GMAIL_PASSWORD)
+            server.send_message(msg)
 
         print(f"✅ Email sent for message from {name} <{sender_email}>")
         return True
