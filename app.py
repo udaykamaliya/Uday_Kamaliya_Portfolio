@@ -82,9 +82,7 @@ Received: {datetime.now().strftime('%d %B %Y at %I:%M %p')}
         msg.attach(MIMEText(plain, "plain"))
         msg.attach(MIMEText(html,  "html"))
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
-            server.starttls()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.send_message(msg)
 
